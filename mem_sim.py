@@ -1,11 +1,12 @@
 import collections
 
 class MemorySimulator:
-    def __init__(self, page_size, num_tlb_entries, num_frames, rep_policy):
+    def __init__(self, page_size, num_tlb_entries, num_frames, rep_policy, va_bits):
         self.page_size = page_size
         self.num_tlb_entries = num_tlb_entries
         self.num_frames = num_frames    
         self.rep_policy = rep_policy
+        self.va_bits = va_bits
 
         if rep_policy not in ['LRU', 'SecondChance']:
             raise ValueError("Política de substituição inválida. Use 'LRU' ou 'SecondChance'.")
@@ -25,13 +26,13 @@ class MemorySimulator:
         Simula o acesso a um endereço virtual.
         Deve atualizar os contadores e aplicar a política de substituição se necessário.
         """
-        
+        pass
 
     def print_statistics(self):
         print("=" * 60)
         print("SIMULADOR DE MEMÓRIA - Estatísticas de Acesso")
         print("=" * 60)
-        print(f"Política de Substituição:   {self.replacement_policy}")
+        print(f"Política de Substituição:   {self.rep_policy}")
         print(f"Tamanho da Página:          {self.page_size} bytes")
         print(f"Entradas na TLB:            {self.num_tlb_entries}")
         print(f"Número de Frames:           {self.num_frames}")
