@@ -20,6 +20,7 @@ class MemorySimulator:
         self.tlb_misses = 0
         self.page_faults = 0
 
+#teste.
 
     def access_memory(self, virtual_address):
         """
