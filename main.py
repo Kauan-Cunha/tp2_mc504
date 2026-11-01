@@ -8,4 +8,3 @@ arq_test = open("tests/trace.in", "r")
 for addr in arq_test:
     mem_simulator.access_memory(int(addr))
 mem_simulator.print_statistics()
-
