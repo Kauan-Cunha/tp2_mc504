@@ -2,20 +2,29 @@ import collections
 import math
 
 class MemorySimulator:
-    def __init__(self, page_size, num_tlb_entries, num_frames, rep_policy, va_bits):
+    def __init__(self, page_size, num_tlb_entries, num_frames, rep_policy, va_bits, access_trace = None):
         self.page_size = page_size
         self.num_tlb_entries = num_tlb_entries
         self.num_frames = num_frames    
         self.rep_policy = rep_policy
         self.va_bits = va_bits
 
-        if rep_policy not in ['LRU', 'SecondChance']:
-            raise ValueError("Política de substituição inválida. Use 'LRU' ou 'SecondChance'.")
+        if rep_policy not in ['LRU', 'SecondChance', 'Optimal']:
+            raise ValueError("Política de substituição inválida.")
+
+        if rep_policy == 'Optimal' and access_trace is None:
+            raise ValueError("Optimal requer um arquivo de trace.")
+
+        self.rep_func = {
+            'LRU': self._lru,
+            'SecondChance': self._second_chance,
+            'Optimal': self._optimal
+        }[rep_policy]
+
 
         self.tlb = collections.OrderedDict()
         self.page_table = {} 
         self.frames = [None] * num_frames
-        self.rep_func: function = self._lru if rep_policy == 'LRU' else self._second_chance
 
         # contadores de estatísticas
         self.tlb_hits = 0
@@ -29,6 +38,44 @@ class MemorySimulator:
         #sc-variables
         self.clock_pointer = 0
         self.reference_bits = [0] * num_frames
+
+        # optimal variables
+        if access_trace is not None:
+            with open(access_trace, 'r') as f:
+                self.access_trace = [
+                    int(line.strip()) >> int(math.log2(page_size))
+                    for line in f if line.strip()
+                ]
+        else:
+            self.access_trace = []
+
+        self.trace_pointer = -1
+        self.future_positions = collections.defaultdict(collections.deque)
+
+        if rep_policy == 'Optimal':
+            for i, page in enumerate(self.access_trace):
+                self.future_positions[page].append(i)
+
+
+    def _optimal(self) -> int:
+        """
+        Seleciona o frame cuja página será utilizada mais distante no futuro.
+        Caso a página não volte a ser utilizada, seleciona-a imediatamente.
+        """
+        farthest = -1
+        victim = -1
+
+        for i, page in enumerate(self.frames):
+            if not self.future_positions[page]:
+                return i
+
+            next_use = self.future_positions[page][0]
+
+            if next_use > farthest:
+                farthest = next_use
+                victim = i
+
+        return victim
 
     def _second_chance_update(self, frame_number: int) -> None:
         self.reference_bits[frame_number] = 1
@@ -61,13 +108,17 @@ class MemorySimulator:
 
         return max
 
-    def update_tlb(self, page_number, frame_buffer):
-            self.tlb[page_number] = frame_buffer
-            if len(self.tlb) > self.num_tlb_entries:
-                # last=False remove no modelo FIFO (o primeiro que entrou/menos recente)
-                self.tlb.popitem(last=False)
+    def _update_tlb(self, page_number, frame_buffer):
+        """
+        Atualiza a tbl alocando o page->frame_buffer no espaço vazio ou liberando espaço pra uma nova entrada
+        Replacement_Policy: LRU
+        """
+        self.tlb[page_number] = frame_buffer
+        if len(self.tlb) > self.num_tlb_entries:
+            # last=False remove no modelo FIFO (o primeiro que entrou/menos recente)
+            self.tlb.popitem(last=False)
 
-    def alocate_frame(self, page_number: int) -> int:
+    def _alocate_frame(self, page_number: int) -> int:
         """
         Acha uma posição vazia para alocar a página. Caso não tenha,
         aplica uma política de substituição.
@@ -102,6 +153,10 @@ class MemorySimulator:
         offset_bits = int(math.log2(self.page_size))
         page_number = virtual_address >> offset_bits
 
+        if self.rep_policy == 'Optimal':
+            self.trace_pointer += 1
+            self.future_positions[page_number].popleft()
+
         if page_number in self.tlb:
             #tlb_hit
             self.tlb_hits += 1
@@ -114,7 +169,7 @@ class MemorySimulator:
             #atualizando o contador para politica
             if self.rep_policy == 'LRU':
                 self._lru_update(frame_pos)
-            else:
+            elif self.rep_policy == 'SecondChance':
                 self._second_chance_update(frame_pos)
 
         else: #tlb miss
@@ -124,7 +179,7 @@ class MemorySimulator:
             if self.page_table.get(page_number) is None: #page_fault
                 self.page_faults += 1
                 #aloco na memória física.
-                new_frame_pos = self.alocate_frame(page_number)
+                new_frame_pos = self._alocate_frame(page_number)
                 self.page_table[page_number] = new_frame_pos
                 
             else:
@@ -133,10 +188,10 @@ class MemorySimulator:
             #atulizando contadores da rep_policy
             if self.rep_policy == 'LRU':
                 self._lru_update(new_frame_pos)
-            else:
+            elif self.rep_policy == 'SecondChance':
                 self._second_chance_update(new_frame_pos)
 
-            self.update_tlb(page_number, new_frame_pos)
+            self._update_tlb(page_number, new_frame_pos)
 
         
     def print_statistics(self):
